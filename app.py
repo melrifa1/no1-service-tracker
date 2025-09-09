@@ -219,11 +219,11 @@ with chosen[0]:
     st.subheader("Log Completed Services")
     col1, col2 = st.columns(2)
     with col1:
-        served_date = st.date_input("Date", value=datetime.datetime.now().date(), max_value=datetime.datetime.now().date())
-        served_time = st.time_input("Time")
+        # served_date = st.date_input("Date", value=datetime.datetime.now().date(), max_value=datetime.datetime.now().date())
+        # served_time = st.time_input("Time")
 
         # Combine into a datetime
-        served_at = datetime.datetime.combine(served_date, served_time)
+        served_at = datetime.datetime.combine(datetime.datetime.now().date(), datetime.datetime.now().time())
         qty = st.number_input("Quantity", min_value=1, step=1, value=1)
         tip = st.number_input("Tip (in your currency)", min_value=0.0, step=1.0, value=0.0)
     services = sb.table("services").select("id, name, price_cents, is_active").eq("is_active", True).order("name").execute().data
