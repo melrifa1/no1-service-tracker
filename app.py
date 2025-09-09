@@ -39,7 +39,7 @@ def return_start_and_end(key=None):
 # Utility function for fetching logs
 # ===============================
 def fetch_service_logs(
-    user_id=None, start_date=None, end_date=None, user_filter=None, svc_filter=None, all_users=None, all_servs=None
+    user_id=None, start_date=None, end_date=None, user_filter=None, all_users=None, all_servs=None
 ):
     """
     Fetch service logs from Supabase and compute user earnings.
@@ -49,22 +49,18 @@ def fetch_service_logs(
         start_date (date): filter from
         end_date (date): filter to
         user_filter (str): username filter (for admin)
-        svc_filter (str): service name filter (for admin)
         all_users (list): list of all users dicts (for admin)
-        all_servs (list): list of all services dicts (for admin)
-
     Returns:
         list of dicts: each dict contains all fields for display
     """
     q = sb.table("service_logs").select(
-        "qty, tip_cents, served_at, payment_type, users(username, service_percentage), services(name, price_cents, is_active)"
+        "qty, tip_cents, amount_cents, served_at, payment_type, users(username, service_percentage)"
     )
 
     if start_date:
         q = q.gte("served_at", start_date.isoformat())
     if end_date:
         q = q.lte("served_at", end_date.isoformat())
-
     # user filter for admin view
     if user_filter and all_users and user_filter != "All":
         uid = next(u["id"] for u in all_users if u["username"] == user_filter)
@@ -72,33 +68,26 @@ def fetch_service_logs(
     elif user_id:
         q = q.eq("user_id", user_id)
 
-    # service filter for admin view
-    if svc_filter and all_servs and svc_filter != "All":
-        sid = next(s["id"] for s in all_servs if s["name"] == svc_filter)
-        q = q.eq("service_id", sid)
-
     data = q.order("served_at").execute().data
     if not data:
         return []
 
     rows = []
     for r in data:
-        price = r["services"]["price_cents"] / 100.0
-        amount = price * r["qty"]
+        # price = r["services"]["price_cents"] / 100.0
+        amount = r["amount_cents"] * r["qty"]
         user_percent = r["users"]["service_percentage"]
         service_earning = amount * (user_percent / 100.0)
         rows.append({
-            "Date & Time": pd.to_datetime(r["served_at"]),
+            "Date & Time": pd.to_datetime(r["served_at"]).strftime("%Y-%m-%d %I:%M:%S %p"),
             "User": r["users"]["username"],
-            "Service": r["services"]["name"],
-            "Service Price": price,
-            "Inactive": not r["services"]["is_active"],
             "Qty": r["qty"],
             "User Percent": user_percent,
-            "Service Amount": amount,
-            "Tip": r["tip_cents"] / 100.0,
+            "Service Amount": r["amount_cents"],
+            "Total Service Amount": amount,
+            "Tip": r["tip_cents"],
             "Payment Type": r["payment_type"],
-            "Total": service_earning + (r["tip_cents"] / 100.0)
+            "Total": service_earning + (r["tip_cents"])
         })
 
     return rows
@@ -209,47 +198,57 @@ st.title("💼 Services & Tips Tracker")
 
 main_tabs = ["Log Services", "My Daily Tracker"]
 if is_admin:
-    main_tabs += ["Users & Services", "Reports", "Data Admin"]
+    main_tabs += ["Users", "Reports", "Data Admin"]
 
-chosen = st.tabs(main_tabs)
+tab = st.sidebar.radio("Navigation", main_tabs, key="active_tab")
+active_tab_index = main_tabs.index(st.session_state.active_tab)
 
 # --------------- Log Services (User)
-with chosen[0]:
+if tab == "Log Services":
     st.subheader("Log Completed Services")
-    col1, col2 = st.columns(2)
-    with col1:
-        served_at = datetime.datetime.combine(datetime.datetime.now().date(), datetime.datetime.now().time())
-        qty = st.number_input("Quantity", min_value=1, step=1, value=1)
-        tip = st.number_input("Tip (in your currency)", min_value=0.0, step=1.0, value=0.0)
 
-    payment_type = st.selectbox("Payment Type", ["Credit", "Cash"])
+    with st.form("log_service_form", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            served_at = datetime.datetime.now()
+            qty = st.number_input(
+                "Quantity", min_value=1, step=1, value=1, key="qty"
+            )
+            amount = st.number_input(
+                "Service Amount (in your currency)", min_value=0.0, step=1.0, value=0.0, key="amount"
+            )
+            tip = st.number_input(
+                "Tip (in your currency)", min_value=0.0, step=1.0, value=0.0, key="tip"
+            )
+            payment_type = st.selectbox("Payment Type", ["Credit", "Cash"])
 
-    services = sb.table("services").select("id, name, price_cents, is_active") \
-        .eq("is_active", True).order("name").execute().data
-    names = [s["name"] for s in services]
-    svc = st.selectbox("Service", options=names)
-    svc_row = next((s for s in services if s["name"] == svc), None)
+        submitted = st.form_submit_button("Save entry", type="primary")
 
-    if svc_row:
-        st.caption(f"Price: {svc_row['price_cents']/100.0:,.2f}")
+        if submitted:
+            # Validation
+            if qty is None or qty <= 0:
+                st.error("Quantity is required and must be greater than zero.")
+            elif amount is None or amount <= 0:
+                st.error("Service Amount is required and must be greater than zero.")
+            elif tip is None or tip < 0:
+                st.error("Tip cannot be negative.")
+            else:
+                # Save entry
+                sb.table("service_logs").insert({
+                    "user_id": user["id"],
+                    "served_at": served_at.isoformat(),
+                    "qty": int(qty),
+                    "amount_cents": amount,
+                    "tip_cents": tip,
+                    "payment_type": payment_type
+                }).execute()
+                st.success("Saved!")
+                time.sleep(0.5)
+                st.rerun()
 
-    if st.button("Save entry", type="primary"):
-        if not svc_row:
-            st.error("Pick a service")
-        else:
-            sb.table("service_logs").insert({
-                "user_id": user["id"],
-                "service_id": svc_row["id"],
-                "served_at": served_at.isoformat(),
-                "qty": int(qty),
-                "tip_cents": int(round(float(tip) * 100)),
-                "payment_type": payment_type
-            }).execute()
-            st.success("Saved!")
-            time.sleep(0.5)
-            st.rerun()
+
 # --------------- My Daily Tracker (User)
-with chosen[1]:
+if tab == "My Daily Tracker":
     st.subheader("My Daily Tracker")
     start, end = return_start_and_end(key="daily_tracker")
 
@@ -259,22 +258,22 @@ with chosen[1]:
         st.info("No entries in range.")
     else:
         df = pd.DataFrame(rows)
-        st.dataframe(df.drop(columns=["User", "Inactive"]))  # only show relevant columns to user
+        st.dataframe(df.drop(columns=["User"]))  # only show relevant columns to user
 
         # Show totals by payment type
         st.markdown("#### Totals by Payment Type")
-        by_type = df.groupby(["Payment Type", "User Percent"])[["Qty", "Service Amount", "Tip", "Total"]].sum().reset_index()
+        by_type = df.groupby(["Payment Type", "User Percent"])[["Total"]].sum().reset_index()
         st.dataframe(by_type)
 
         # Show grand totals
-        totals = df[["Service Amount", "Tip", "Total"]].sum().to_dict()
-        st.metric("Total Service Amount", f"{totals['Service Amount']:,.2f}")
+        totals = df[["Total Service Amount", "Tip", "Total"]].sum().to_dict()
+        st.metric("Total Service Amount", f"{totals['Total Service Amount']:,.2f}")
         st.metric("Total Tips", f"{totals['Tip']:,.2f}")
         st.metric("Grand Total", f"{totals['Total']:,.2f}")
 
 # --------------- Admin: Users & Services
 if is_admin:
-    with chosen[2]:
+    if tab == "Users":
         st.markdown("### Users")
         with st.expander("Add user"):
             nuser = st.text_input("Username", key="nu")
@@ -296,46 +295,8 @@ if is_admin:
         ulist = sb.table("users").select("id, username, role, service_percentage, is_active, created_at").order("created_at", desc=True).execute().data
         st.dataframe(pd.DataFrame(ulist)[["username","role","is_active","service_percentage", "created_at"]])
 
-        st.markdown("### Services")
-        with st.expander("Add service"):
-            sname = st.text_input("Name", key="sn")
-            sdesc = st.text_area("Description", key="sd")
-            simg = st.text_input("Image URL", key="si")
-            sprice = st.number_input("Price", min_value=0.0, step=1.0)
-            if st.button("Create service"):
-                if not sname:
-                    st.error("Service name required")
-                else:
-                    sb.table("services").insert({
-                        "name": sname.strip(),
-                        "description": sdesc.strip() if sdesc else None,
-                        "image_url": simg.strip() if simg else None,
-                        "price_cents": int(round(sprice * 100)),
-                        "is_active": True
-                    }).execute()
-                    st.success("Service created")
-
-        servs = sb.table("services").select(
-            "id, name, description, image_url, price_cents, is_active, created_at"
-        ).order("name").execute().data
-
-        if servs:
-            for svc in servs:
-                col1, col2, col3, col4 = st.columns([3, 4, 2, 2])
-                with col1:
-                    st.text(svc["name"])
-                with col2:
-                    st.caption(svc.get("description") or "")
-                with col3:
-                    st.text(f"💲 {svc['price_cents'] / 100:.2f}")
-                with col4:
-                    active_label = "Deactivate" if svc["is_active"] else "Activate"
-                    if st.button(active_label, key=f"toggle_{svc['id']}"):
-                        sb.table("services").update({"is_active": not svc["is_active"]}).eq("id", svc["id"]).execute()
-                        st.rerun()
-
     # --------------- Admin: Reports
-    with chosen[3]:
+    if tab == "Reports":
         st.markdown("### Reports")
 
         # ----------------- Session state for tab & report
@@ -351,20 +312,6 @@ if is_admin:
 
         # ----------------- Fetch users
         all_users = sb.table("users").select("id, username").eq("is_active", True).order("username").execute().data
-
-        # ----------------- Service filter: active only or all
-        include_deactivated = st.radio(
-            "Services to include",
-            ["Active only", "Active + Deactivated"],
-            index=0,
-            horizontal=True
-        )
-
-        if include_deactivated == "Active only":
-            all_servs = sb.table("services").select("id, name, is_active").eq("is_active", True).order(
-                "name").execute().data
-        else:
-            all_servs = sb.table("services").select("id, name, is_active").order("name").execute().data
 
         # ----------------- Quick period filters
         colf = st.columns(5)
@@ -385,7 +332,7 @@ if is_admin:
                     start = end - timedelta(days=6)
                 elif period == "This month":
                     start = today.replace(day=1)
-                    end = today
+                    end = today + timedelta(days=1)
                 elif period == "Last month":
                     first_this = today.replace(day=1)
                     last_month_end = first_this - timedelta(days=1)
@@ -397,8 +344,6 @@ if is_admin:
         with colf[1]:
             user_filter = st.selectbox("User", ["All"] + [u["username"] for u in all_users])
         with colf[2]:
-            svc_filter = st.selectbox("Service", ["All"] + [s["name"] for s in all_servs])
-        with colf[3]:
             st.write("")
             st.write("")
             if st.button("Run report", type="primary"):
@@ -410,9 +355,7 @@ if is_admin:
                 start_date=start,
                 end_date=end,
                 user_filter=user_filter,
-                svc_filter=svc_filter,
                 all_users=all_users,
-                all_servs=all_servs
             )
 
             if not rows:
@@ -435,7 +378,7 @@ if is_admin:
                 st.download_button("Download CSV", data=df.to_csv(index=False), file_name="report.csv", mime="text/csv")
 
     # --------------- Admin: Data Admin
-    with chosen[4]:
+    if tab == "Data Admin":
         st.markdown("### Data Admin")
         st.caption("Delete users, change passwords, and delete logs")
         st.markdown("**Change user password**")
@@ -464,9 +407,9 @@ if is_admin:
             st.success("User deleted (and their logs if any)")
         st.divider()
         st.markdown("**Delete a service log record**")
-        recent = sb.table("service_logs").select("id, served_at, users(username), services(name)").order("created_at", desc=True).limit(50).execute().data
+        recent = sb.table("service_logs").select("id, served_at, users(username)").order("created_at", desc=True).limit(50).execute().data
         if recent:
-            options = {f"{r['served_at']} — {r['users']['username']} — {r['services']['name']}": r["id"] for r in recent}
+            options = {f"{datetime.datetime.fromisoformat(r['served_at']).strftime("%Y-%m-%d %I:%M:%S %p")} — {r['users']['username']}": r["id"] for r in recent}
             pick = st.selectbox("Pick a record", list(options.keys()))
             if st.button("Delete record"):
                 sb.table("service_logs").delete().eq("id", options[pick]).execute()
