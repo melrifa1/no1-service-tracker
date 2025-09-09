@@ -1,0 +1,25 @@
+[project]
+name = "no1-service-tracker"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pandas>=2.3.2",
+    "passlib>=1.7.4",
+    "psycopg2-binary>=2.9.10",
+    "python-dateutil>=2.9.0.post0",
+    "supabase>=2.6.0",
+    "streamlit>=1.49.1",
+    "bcrypt>=4.3.0",
+    "pillow>=11.3.0",
+    "streamlit-cookies-manager<=0.2.0",
+]
+
+[dependency-groups]
+dev = [
+    "streamlit",
+]
+
+[tool.uv.sources]
+no1-service-tracker = { workspace = true }
