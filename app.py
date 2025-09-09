@@ -1,7 +1,6 @@
 # ================================
 # app.py (Streamlit main — updated with top-level admin tabs)
 # ================================
-import os
 import time
 import pandas as pd
 import datetime
@@ -11,7 +10,6 @@ from passlib.hash import bcrypt as bcrypt_hasher
 from dateutil.relativedelta import relativedelta
 from PIL import Image
 import requests
-from io import BytesIO
 try:
     from supabase import create_client
 except Exception as e:
@@ -448,9 +446,6 @@ if is_admin:
                 update_values["password_hash"] = bcrypt_hasher.hash(new_pass)
             sb.table("users").update(update_values).eq("username", target_user).execute()
             st.success("User updated")
-        # if st.button("Update password"):
-        #     sb.table("users").update({"password_hash": bcrypt_hasher.hash(new_pass)}).eq("username", target_user).execute()
-        #     st.success("Password updated")
         st.divider()
         st.markdown("**Delete user**")
         del_user = st.selectbox("User to delete", [u["username"] for u in sb.table("users").select("username").order("username").execute().data], key="du")
