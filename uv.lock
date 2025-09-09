@@ -475,6 +475,8 @@ dependencies = [
     { name = "python-dateutil" },
     { name = "streamlit" },
     { name = "streamlit-cookies-manager" },
+    { name = "streamlit-javascript" },
+    { name = "streamlit-js-eval" },
     { name = "supabase" },
 ]
 
@@ -493,6 +495,8 @@ requires-dist = [
     { name = "python-dateutil", specifier = ">=2.9.0.post0" },
     { name = "streamlit", specifier = ">=1.49.1" },
     { name = "streamlit-cookies-manager", specifier = "<=0.2.0" },
+    { name = "streamlit-javascript", specifier = ">=0.1.5" },
+    { name = "streamlit-js-eval", specifier = ">=0.1.7" },
     { name = "supabase", specifier = ">=2.6.0" },
 ]
 
@@ -1082,6 +1086,30 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/a8/15/d016f1b2e1c547fecf7782dac3860d2aad4e22b4c1664d78bb2a873163ef/streamlit-cookies-manager-0.2.0.tar.gz", hash = "sha256:498531778bd4a63267364e8986b3774319d3ba2f4ba65a92357196723966e4d4", size = 680070 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/61/60/d4aefff016f9fe48d10c59b2e52ae823444525f973e7948821c9eefb4217/streamlit_cookies_manager-0.2.0-py3-none-any.whl", hash = "sha256:12503dc3367dfc2a780cb9e4a81ad791737806a7b9d1c25a006386e32aabe956", size = 690962 },
+]
+
+[[package]]
+name = "streamlit-javascript"
+version = "0.1.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "streamlit" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a5/69/723ebc7a58057b1e6f54d0c23c86488054d756e0e470daf4db703fe02a63/streamlit-javascript-0.1.5.tar.gz", hash = "sha256:9da5176522a0acf2c39d3b0bec9f856fdd8ea3c70bb1066841a546ab1348ae1d", size = 512374 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/87/81/0c9e9e4d2dab97224efe105ba44f47b259f37d8e7673b94f5b5523fe2c8f/streamlit_javascript-0.1.5-py3-none-any.whl", hash = "sha256:36ca4d8c46fd5b6526d1a705530472e03cb6e5bb24694330649f21d5c436d280", size = 518387 },
+]
+
+[[package]]
+name = "streamlit-js-eval"
+version = "0.1.7"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "streamlit" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/76/e4/bde7a73ed1967e0713e4e361c9b1a3ee87e66399c39422be13498467dd72/streamlit_js_eval-0.1.7.tar.gz", hash = "sha256:af80eff45e2f23a676588578aff7d2790080360528c656f4a4476c1484574c97", size = 7049 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/98/15/e8abb57a25eb11ee5e645ef123ee7c38f5fecbbea5268e92674f1b65ba61/streamlit_js_eval-0.1.7-py3-none-any.whl", hash = "sha256:c99c23d1c6e2a27fd45794262e2ac07befaef9603a86e4e325a9e980cad8c78d", size = 7912 },
 ]
 
 [[package]]

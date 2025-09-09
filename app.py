@@ -14,10 +14,10 @@ try:
     from supabase import create_client
 except Exception as e:
     st.stop()
-
-from streamlit_cookies_manager import EncryptedCookieManager
+from streamlit_js_eval import streamlit_js_eval
 import json
-
+from streamlit.components.v1 import html
+from streamlit_javascript import st_javascript
 
 def return_start_and_end(key=None):
     today = datetime.datetime.now()
@@ -114,15 +114,6 @@ def get_supabase():
     return create_client(url, key)
 
 sb = get_supabase()
-
-# Secure cookies
-cookies = EncryptedCookieManager(
-    prefix="svc_tracker",
-    password=st.secrets["cookies"]["password"], # store in st.secrets
-)
-if not cookies.ready():
-    st.stop()
-
 SESSION_KEY = "auth_user"
 
 # ---------------- CACHING ----------------
@@ -139,6 +130,13 @@ def get_user(username: str):
     )
     return recs[0] if recs else None
 
+def set_local_storage(key: str, value: str):
+    js_code = f"""
+    <script>
+        localStorage.setItem("{key}", {json.dumps(value)});
+    </script>
+    """
+    html(js_code)
 
 # ---------------- AUTH ----------------
 def login(username: str, password: str):
@@ -150,31 +148,30 @@ def login(username: str, password: str):
     if not bcrypt_hasher.verify(password, u["password_hash"]):
         return False, "Invalid username or password"
 
-    user_obj = {"id": u["id"], "username": u["username"], "role": u["role"], "expires_at": 365}
+    user_obj = {"id": u["id"], "username": u["username"], "role": u["role"]}
+    set_local_storage("auth_user", json.dumps(user_obj))
     st.session_state[SESSION_KEY] = user_obj
-    cookies["auth_user"] = json.dumps(user_obj)
-    cookies.save()
     return True, None
 
 
 def logout():
+    st_javascript("localStorage.removeItem('auth_user');")
+    time.sleep(0.2)
+    # del st.session_state[SESSION_KEY]
     st.session_state.pop(SESSION_KEY, None)
-    cookies["auth_user"] = ""
-    cookies.save()
-
+    st.rerun()
 
 def require_auth():
+    # First, check session_state (fast + reliable)
     if SESSION_KEY in st.session_state:
         return st.session_state[SESSION_KEY]
 
-    cookie_user = cookies.get("auth_user")
-    if cookie_user:
-        try:
-            user_obj = json.loads(cookie_user)
-            st.session_state[SESSION_KEY] = user_obj
-            return user_obj
-        except Exception:
-            return None
+    # If session is empty (e.g., after page refresh), reload from localStorage once
+    user_str = st_javascript("localStorage.getItem('auth_user');")
+    if user_str and user_str not in ["null", "undefined", "{}", ""]:
+        user_obj = json.loads(user_str)
+        st.session_state[SESSION_KEY] = user_obj
+        return user_obj
     return None
 
 
@@ -204,8 +201,9 @@ if st.sidebar.button("Logout"):
     logout()
     st.rerun()
 
-
-is_admin = user["role"] == "admin"
+is_admin = False
+if user:
+    is_admin = user["role"] == "admin"
 
 st.title("💼 Services & Tips Tracker")
 
