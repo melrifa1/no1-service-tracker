@@ -57,7 +57,7 @@ def fetch_service_logs(
         list of dicts: each dict contains all fields for display
     """
     q = sb.table("service_logs").select(
-        "qty, tip_cents, served_at, users(username, service_percentage), services(name, price_cents, is_active)"
+        "qty, tip_cents, served_at, payment_type, users(username, service_percentage), services(name, price_cents, is_active)"
     )
 
     if start_date:
@@ -97,6 +97,7 @@ def fetch_service_logs(
             "User Percent": user_percent,
             "Service Amount": amount,
             "Tip": r["tip_cents"] / 100.0,
+            "Payment Type": r["payment_type"],
             "Total": service_earning + (r["tip_cents"] / 100.0)
         })
 
@@ -117,7 +118,7 @@ sb = get_supabase()
 # Secure cookies
 cookies = EncryptedCookieManager(
     prefix="svc_tracker",
-    password=st.secrets["cookies"]["password"],  # store in st.secrets
+    password=st.secrets["cookies"]["password"], # store in st.secrets
 )
 if not cookies.ready():
     st.stop()
@@ -149,7 +150,7 @@ def login(username: str, password: str):
     if not bcrypt_hasher.verify(password, u["password_hash"]):
         return False, "Invalid username or password"
 
-    user_obj = {"id": u["id"], "username": u["username"], "role": u["role"]}
+    user_obj = {"id": u["id"], "username": u["username"], "role": u["role"], "expires_at": 365}
     st.session_state[SESSION_KEY] = user_obj
     cookies["auth_user"] = json.dumps(user_obj)
     cookies.save()
@@ -219,19 +220,21 @@ with chosen[0]:
     st.subheader("Log Completed Services")
     col1, col2 = st.columns(2)
     with col1:
-        # served_date = st.date_input("Date", value=datetime.datetime.now().date(), max_value=datetime.datetime.now().date())
-        # served_time = st.time_input("Time")
-
-        # Combine into a datetime
         served_at = datetime.datetime.combine(datetime.datetime.now().date(), datetime.datetime.now().time())
         qty = st.number_input("Quantity", min_value=1, step=1, value=1)
         tip = st.number_input("Tip (in your currency)", min_value=0.0, step=1.0, value=0.0)
-    services = sb.table("services").select("id, name, price_cents, is_active").eq("is_active", True).order("name").execute().data
+
+    payment_type = st.selectbox("Payment Type", ["Credit", "Cash"])
+
+    services = sb.table("services").select("id, name, price_cents, is_active") \
+        .eq("is_active", True).order("name").execute().data
     names = [s["name"] for s in services]
     svc = st.selectbox("Service", options=names)
     svc_row = next((s for s in services if s["name"] == svc), None)
+
     if svc_row:
         st.caption(f"Price: {svc_row['price_cents']/100.0:,.2f}")
+
     if st.button("Save entry", type="primary"):
         if not svc_row:
             st.error("Pick a service")
@@ -242,6 +245,7 @@ with chosen[0]:
                 "served_at": served_at.isoformat(),
                 "qty": int(qty),
                 "tip_cents": int(round(float(tip) * 100)),
+                "payment_type": payment_type
             }).execute()
             st.success("Saved!")
             time.sleep(0.5)
@@ -259,7 +263,13 @@ with chosen[1]:
         df = pd.DataFrame(rows)
         st.dataframe(df.drop(columns=["User", "Inactive"]))  # only show relevant columns to user
 
-        totals = df[["Service Amount","Tip","Total"]].sum().to_dict()
+        # Show totals by payment type
+        st.markdown("#### Totals by Payment Type")
+        by_type = df.groupby(["Payment Type", "User Percent"])[["Qty", "Service Amount", "Tip", "Total"]].sum().reset_index()
+        st.dataframe(by_type)
+
+        # Show grand totals
+        totals = df[["Service Amount", "Tip", "Total"]].sum().to_dict()
         st.metric("Total Service Amount", f"{totals['Service Amount']:,.2f}")
         st.metric("Total Tips", f"{totals['Tip']:,.2f}")
         st.metric("Grand Total", f"{totals['Total']:,.2f}")
@@ -418,9 +428,11 @@ if is_admin:
                 st.markdown("#### Services Completed per User")
                 st.dataframe(grp_user)
 
-                sums = df.groupby(["User", "User Percent"])[["Service Amount", "Tip", "Total"]].sum().reset_index()
-                st.markdown("#### Totals per User")
-                st.dataframe(sums)
+                # Summary by user and payment type
+                st.markdown("#### Totals per User & Payment Type")
+                sums = df.groupby(["User", "Payment Type", "User Percent"])[["Service Amount", "Tip", "Total"]].sum().reset_index()
+                df_renamed = sums.rename(columns={'Service Amount': 'Total Service Amount', 'Tip': 'Total Tip', 'Total': 'Total with Percent + tip'})
+                st.dataframe(df_renamed)
 
                 st.download_button("Download CSV", data=df.to_csv(index=False), file_name="report.csv", mime="text/csv")
 
