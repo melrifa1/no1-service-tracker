@@ -51,3 +51,7 @@ ADD COLUMN image_url TEXT;
 
 ALTER TABLE public.users
 ADD COLUMN service_percentage numeric DEFAULT 100 CHECK (service_percentage >= 0 AND service_percentage <= 100);
+
+ALTER TABLE public.service_logs
+ADD COLUMN payment_type text NOT NULL DEFAULT 'Cash'
+CHECK (payment_type IN ('Cash','Credit'));
