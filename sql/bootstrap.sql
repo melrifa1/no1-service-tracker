@@ -29,7 +29,8 @@ user_id uuid not null references public.users(id) on delete cascade,
 service_id uuid not null references public.services(id),
 served_at timestamptz not null,
 qty integer not null default 1 check (qty > 0),
-tip_cents integer not null default 0 check (tip_cents >= 0),
+tip_cents numeric(10,2) not null default 0 check (tip_cents >= 0),
+amount_cents numeric(10,2) not null default 0 check (amount_cents >= 0),
 created_at timestamptz not null default now()
 );
 
@@ -55,3 +56,19 @@ ADD COLUMN service_percentage numeric DEFAULT 100 CHECK (service_percentage >= 0
 ALTER TABLE public.service_logs
 ADD COLUMN payment_type text NOT NULL DEFAULT 'Cash'
 CHECK (payment_type IN ('Cash','Credit'));
+
+
+-- Drop services table
+drop table if exists public.services cascade;
+
+-- Adjust service_logs
+alter table public.service_logs
+drop column if exists service_id;
+
+-- Add amount_cents column (manual entry by user)
+alter table public.service_logs
+add column if not exists amount_cents numeric(10,2)  not null default 0 check (amount_cents >= 0);
+
+-- Rebuild indexes to reflect new structure
+drop index if exists idx_service_logs_service;
+create index if not exists idx_service_logs_user_date on public.service_logs(user_id, served_at);
