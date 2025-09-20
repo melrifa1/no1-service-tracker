@@ -18,6 +18,8 @@ from streamlit_js_eval import streamlit_js_eval
 import json
 from streamlit.components.v1 import html
 from streamlit_javascript import st_javascript
+import pytz
+central_tz = pytz.timezone("US/Central")
 
 def return_start_and_end(key=None):
     today = datetime.datetime.now()
@@ -79,7 +81,7 @@ def fetch_service_logs(
         user_percent = r["users"]["service_percentage"]
         service_earning = amount * (user_percent / 100.0)
         rows.append({
-            "Date & Time": pd.to_datetime(r["served_at"]).strftime("%Y-%m-%d %I:%M:%S %p"),
+            "Date & Time": pd.to_datetime(r["served_at"]).tz_convert("UTC").astimezone(central_tz).strftime("%Y-%m-%d %I:%M:%S %p"),
             "User": r["users"]["username"],
             "Qty": r["qty"],
             "User Percent": user_percent,
@@ -211,9 +213,10 @@ if tab == "Log Services":
         col1, col2 = st.columns(2)
         with col1:
             served_at = datetime.datetime.now()
-            qty = st.number_input(
-                "Quantity", min_value=1, step=1, value=1, key="qty"
-            )
+            qty = 1
+            # qty = st.number_input(
+            #     "Quantity", min_value=1, step=1, value=1, key="qty"
+            # )
             amount = st.number_input(
                 "Service Amount (in your currency)", min_value=0.0, step=1.0, value=0.0, key="amount"
             )
@@ -375,6 +378,30 @@ if is_admin:
                 df_renamed = sums.rename(columns={'Service Amount': 'Total Service Amount', 'Tip': 'Total Tip', 'Total': 'Total with Percent + tip'})
                 st.dataframe(df_renamed)
 
+                st.markdown("#### Overall Totals per User")
+                user_summary = df.groupby(["User", "User Percent"]).agg(
+                    total_services=("Qty", "sum"),
+                    total_tip=("Tip", "sum"),
+                    total_service=("Service Amount", "sum")
+                ).reset_index()
+
+                # Apply percentage calculation
+                user_summary["Total with Percent + Tip"] = (
+                        user_summary["total_service"] * (user_summary["User Percent"] / 100.0)
+                        + user_summary["total_tip"]
+                )
+
+                # Rename for clarity
+                user_summary = user_summary.rename(columns={
+                    "User": "User",
+                    "User Percent": "Percentage",
+                    "total_services": "Total Services",
+                    "total_tip": "Total Tip",
+                    "total_service": "Total Service Amount"
+                })
+
+                st.dataframe(user_summary)
+
                 st.download_button("Download CSV", data=df.to_csv(index=False), file_name="report.csv", mime="text/csv")
 
     # --------------- Admin: Data Admin
@@ -409,7 +436,7 @@ if is_admin:
         st.markdown("**Delete a service log record**")
         recent = sb.table("service_logs").select("id, served_at, users(username)").order("created_at", desc=True).limit(50).execute().data
         if recent:
-            options = {f"{datetime.datetime.fromisoformat(r['served_at']).strftime("%Y-%m-%d %I:%M:%S %p")} — {r['users']['username']}": r["id"] for r in recent}
+            options = {f"{datetime.datetime.fromisoformat(r['served_at']).astimezone(central_tz).strftime('%Y-%m-%d %I:%M:%S %p')} — {r['users']['username']}": r["id"] for r in recent}
             pick = st.selectbox("Pick a record", list(options.keys()))
             if st.button("Delete record"):
                 sb.table("service_logs").delete().eq("id", options[pick]).execute()
