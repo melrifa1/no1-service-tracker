@@ -20,13 +20,14 @@ from streamlit.components.v1 import html
 from streamlit_javascript import st_javascript
 import pytz
 central_tz = pytz.timezone("US/Central")
+UTC_TZ = pytz.utc
 
 def return_start_and_end(key=None):
-    today = datetime.datetime.now()
+    today_r = datetime.datetime.now(central_tz)
 
     # Date selection
-    start_date = st.date_input("From (date)", value=(today - timedelta(days=7)).date(), key=f"rf_{key}")
-    end_date = st.date_input("To (date)", value=today.date(), key=f"rt_{key}")
+    start_date = st.date_input("From (date)", value=(today_r - timedelta(days=7)).date(), key=f"rf_{key}")
+    end_date = st.date_input("To (date)", value=today_r.date(), key=f"rt_{key}")
 
     # Time selection
     start_time = st.time_input("From (time)", value=datetime.time(0, 0), key=f"rf_time_{key}")  # default midnight
@@ -254,8 +255,10 @@ if tab == "Log Services":
 if tab == "My Daily Tracker":
     st.subheader("My Daily Tracker")
     start, end = return_start_and_end(key="daily_tracker")
+    start_utc = start.astimezone(UTC_TZ)
+    end_utc = end.astimezone(UTC_TZ)
 
-    rows = fetch_service_logs(user_id=user["id"], start_date=start, end_date=end)
+    rows = fetch_service_logs(user_id=user["id"], start_date=start_utc, end_date=end_utc)
 
     if not rows:
         st.info("No entries in range.")
@@ -318,7 +321,8 @@ if is_admin:
 
         # ----------------- Quick period filters
         colf = st.columns(5)
-        today = date.today()
+        now_central = datetime.datetime.now(central_tz)
+        today = now_central.replace(hour=0, minute=0, second=0, microsecond=0)  # start of today in Central
         start, end = None, None
 
         with colf[0]:
@@ -341,6 +345,8 @@ if is_admin:
                     last_month_end = first_this - timedelta(days=1)
                     start = last_month_end.replace(day=1)
                     end = last_month_end
+                if end:
+                    end = end.replace(hour=23, minute=59, second=59, microsecond=999999)
             else:
                 start, end = return_start_and_end()
 
@@ -354,9 +360,11 @@ if is_admin:
 
         # ----------------- Display report only if run_report is True
         if st.session_state.run_report:
+            start_utc = start.astimezone(UTC_TZ)
+            end_utc = end.astimezone(UTC_TZ)
             rows = fetch_service_logs(
-                start_date=start,
-                end_date=end,
+                start_date=start_utc,
+                end_date=end_utc,
                 user_filter=user_filter,
                 all_users=all_users,
             )
