@@ -7,14 +7,10 @@ import datetime
 from datetime import date, timedelta
 import streamlit as st
 from passlib.hash import bcrypt as bcrypt_hasher
-from dateutil.relativedelta import relativedelta
-from PIL import Image
-import requests
 try:
     from supabase import create_client
 except Exception as e:
     st.stop()
-from streamlit_js_eval import streamlit_js_eval
 import json
 from streamlit.components.v1 import html
 from streamlit_javascript import st_javascript
