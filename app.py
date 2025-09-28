@@ -158,17 +158,33 @@ def logout():
     st.rerun()
 
 def require_auth():
-    # First, check session_state (fast + reliable)
+    # session_state check
     if SESSION_KEY in st.session_state:
         return st.session_state[SESSION_KEY]
 
-    # If session is empty (e.g., after page refresh), reload from localStorage once
-    user_str = st_javascript("localStorage.getItem('auth_user');")
-    if user_str and user_str not in ["null", "undefined", "{}", ""]:
-        user_obj = json.loads(user_str)
-        st.session_state[SESSION_KEY] = user_obj
-        return user_obj
+    if not is_safari():
+        # only use localStorage for non-Safari
+        user_str = st_javascript("localStorage.getItem('auth_user');")
+        if user_str and user_str not in ["null", "undefined", "{}", ""]:
+            user_obj = json.loads(user_str)
+            st.session_state[SESSION_KEY] = user_obj
+            return user_obj
+
+    # Safari: force login
     return None
+
+# def require_auth():
+#     # First, check session_state (fast + reliable)
+#     if SESSION_KEY in st.session_state:
+#         return st.session_state[SESSION_KEY]
+#
+#     # If session is empty (e.g., after page refresh), reload from localStorage once
+#     user_str = st_javascript("localStorage.getItem('auth_user');")
+#     if user_str and user_str not in ["null", "undefined", "{}", ""]:
+#         user_obj = json.loads(user_str)
+#         st.session_state[SESSION_KEY] = user_obj
+#         return user_obj
+#     return None
 
 
 # ---------------- UI ----------------
