@@ -72,3 +72,5 @@ add column if not exists amount_cents numeric(10,2)  not null default 0 check (a
 -- Rebuild indexes to reflect new structure
 drop index if exists idx_service_logs_service;
 create index if not exists idx_service_logs_user_date on public.service_logs(user_id, served_at);
+
+alter table users add column pin varchar(10) null;
