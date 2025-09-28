@@ -184,10 +184,39 @@ if st.sidebar.button("🔄 Refresh"):
 # --------------- My Daily Tracker (User)
 if tab == "My Daily Tracker":
     st.subheader("My Daily Tracker")
-    start, end = return_start_and_end(key="daily_tracker")
+    # start, end = return_start_and_end(key="daily_tracker")
+    # start_utc = start.astimezone(UTC_TZ)
+    # end_utc = end.astimezone(UTC_TZ)
+    colf = st.columns(5)
+    now_central = datetime.datetime.now(central_tz)
+    today = now_central.replace(hour=0, minute=0, second=0, microsecond=0)  # start of today in Central
+    start, end = None, None
+    with colf[0]:
+        period = st.selectbox("Quick range", ["This week", "Last week", "This month", "Last month", "Custom"],
+                              index=0)
+        if period != "Custom":
+            if period == "This week":
+                # Sunday of this week
+                start = today - timedelta(days=today.weekday() + 1 if today.weekday() < 6 else 0)
+                end = start + timedelta(days=6)
+            elif period == "Last week":
+                # Sunday of last week
+                end = today - timedelta(days=today.weekday() + 2 if today.weekday() < 6 else 1)
+                start = end - timedelta(days=6)
+            elif period == "This month":
+                start = today.replace(day=1)
+                end = today + timedelta(days=1)
+            elif period == "Last month":
+                first_this = today.replace(day=1)
+                last_month_end = first_this - timedelta(days=1)
+                start = last_month_end.replace(day=1)
+                end = last_month_end
+            if end:
+                end = end.replace(hour=23, minute=59, second=59, microsecond=999999)
+        else:
+            start, end = return_start_and_end()
     start_utc = start.astimezone(UTC_TZ)
     end_utc = end.astimezone(UTC_TZ)
-
     rows = fetch_service_logs(user_id=user["id"], start_date=start_utc, end_date=end_utc)
 
     if not rows:
