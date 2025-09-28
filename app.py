@@ -18,6 +18,13 @@ import pytz
 central_tz = pytz.timezone("US/Central")
 UTC_TZ = pytz.utc
 
+def is_safari() -> bool:
+    user_agent = st_javascript("navigator.userAgent")
+    if user_agent:
+        if "Safari" in user_agent and "Chrome" not in user_agent:
+            return True
+    return False
+
 def return_start_and_end(key=None):
     today_r = datetime.datetime.now(central_tz)
 
@@ -137,7 +144,8 @@ def login(username: str, password: str):
         return False, "Invalid username or password"
 
     user_obj = {"id": u["id"], "username": u["username"], "role": u["role"]}
-    set_local_storage("auth_user", json.dumps(user_obj))
+    if not is_safari():
+        set_local_storage("auth_user", json.dumps(user_obj))
     st.session_state[SESSION_KEY] = user_obj
     return True, None
 
