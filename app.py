@@ -11,19 +11,11 @@ try:
     from supabase import create_client
 except Exception as e:
     st.stop()
-import json
-from streamlit.components.v1 import html
-from streamlit_javascript import st_javascript
+
 import pytz
 central_tz = pytz.timezone("US/Central")
 UTC_TZ = pytz.utc
 
-def is_safari() -> bool:
-    user_agent = st_javascript("navigator.userAgent")
-    if user_agent:
-        if "Safari" in user_agent and "Chrome" not in user_agent:
-            return True
-    return False
 
 def return_start_and_end(key=None):
     today_r = datetime.datetime.now(central_tz)
@@ -125,15 +117,6 @@ def get_user(username: str):
     )
     return recs[0] if recs else None
 
-def set_local_storage(key: str, value: str):
-    js_code = f"""
-    <script>
-        localStorage.setItem("{key}", {json.dumps(value)});
-    </script>
-    """
-    html(js_code)
-
-# ---------------- AUTH ----------------
 def login(username: str, password: str):
     u = get_user(username)
     if not u:
@@ -144,47 +127,16 @@ def login(username: str, password: str):
         return False, "Invalid username or password"
 
     user_obj = {"id": u["id"], "username": u["username"], "role": u["role"]}
-    if not is_safari():
-        set_local_storage("auth_user", json.dumps(user_obj))
-    st.session_state[SESSION_KEY] = user_obj
+    st.session_state[SESSION_KEY] = user_obj  # SESSION only, no localStorage
     return True, None
 
-
 def logout():
-    st_javascript("localStorage.removeItem('auth_user');")
-    time.sleep(0.2)
-    # del st.session_state[SESSION_KEY]
     st.session_state.pop(SESSION_KEY, None)
     st.rerun()
 
 def require_auth():
-    # session_state check
-    if SESSION_KEY in st.session_state:
-        return st.session_state[SESSION_KEY]
+    return st.session_state.get(SESSION_KEY)
 
-    if not is_safari():
-        # only use localStorage for non-Safari
-        user_str = st_javascript("localStorage.getItem('auth_user');")
-        if user_str and user_str not in ["null", "undefined", "{}", ""]:
-            user_obj = json.loads(user_str)
-            st.session_state[SESSION_KEY] = user_obj
-            return user_obj
-
-    # Safari: force login
-    return None
-
-# def require_auth():
-#     # First, check session_state (fast + reliable)
-#     if SESSION_KEY in st.session_state:
-#         return st.session_state[SESSION_KEY]
-#
-#     # If session is empty (e.g., after page refresh), reload from localStorage once
-#     user_str = st_javascript("localStorage.getItem('auth_user');")
-#     if user_str and user_str not in ["null", "undefined", "{}", ""]:
-#         user_obj = json.loads(user_str)
-#         st.session_state[SESSION_KEY] = user_obj
-#         return user_obj
-#     return None
 
 
 # ---------------- UI ----------------
@@ -219,57 +171,15 @@ if user:
 
 st.title("💼 Services & Tips Tracker")
 
-main_tabs = ["Log Services", "My Daily Tracker"]
+main_tabs = ["My Daily Tracker"]
 if is_admin:
-    main_tabs += ["Users", "Reports", "Data Admin"]
+    main_tabs += ["Log Services", "Users Management", "Reports", "Edit Services"]
 
 tab = st.sidebar.radio("Navigation", main_tabs, key="active_tab")
 active_tab_index = main_tabs.index(st.session_state.active_tab)
 
-# --------------- Log Services (User)
-if tab == "Log Services":
-    st.subheader("Log Completed Services")
-
-    with st.form("log_service_form", clear_on_submit=True):
-        col1, col2 = st.columns(2)
-        with col1:
-            served_at = datetime.datetime.now()
-            qty = 1
-            # qty = st.number_input(
-            #     "Quantity", min_value=1, step=1, value=1, key="qty"
-            # )
-            amount = st.number_input(
-                "Service Amount (in your currency)", min_value=0.0, step=1.0, value=0.0, key="amount"
-            )
-            tip = st.number_input(
-                "Tip (in your currency)", min_value=0.0, step=1.0, value=0.0, key="tip"
-            )
-            payment_type = st.selectbox("Payment Type", ["Credit", "Cash"])
-
-        submitted = st.form_submit_button("Save entry", type="primary")
-
-        if submitted:
-            # Validation
-            if qty is None or qty <= 0:
-                st.error("Quantity is required and must be greater than zero.")
-            elif amount is None or amount <= 0:
-                st.error("Service Amount is required and must be greater than zero.")
-            elif tip is None or tip < 0:
-                st.error("Tip cannot be negative.")
-            else:
-                # Save entry
-                sb.table("service_logs").insert({
-                    "user_id": user["id"],
-                    "served_at": served_at.isoformat(),
-                    "qty": int(qty),
-                    "amount_cents": amount,
-                    "tip_cents": tip,
-                    "payment_type": payment_type
-                }).execute()
-                st.success("Saved!")
-                time.sleep(0.5)
-                st.rerun()
-
+if st.sidebar.button("🔄 Refresh"):
+    st.rerun()
 
 # --------------- My Daily Tracker (User)
 if tab == "My Daily Tracker":
@@ -283,7 +193,8 @@ if tab == "My Daily Tracker":
     if not rows:
         st.info("No entries in range.")
     else:
-        df = pd.DataFrame(rows)
+        df = pd.DataFrame(rows).sort_values("Date & Time", ascending=False)
+        df.index = df.index + 1
         st.dataframe(df.drop(columns=["User"]))  # only show relevant columns to user
 
         # Show totals by payment type
@@ -299,7 +210,75 @@ if tab == "My Daily Tracker":
 
 # --------------- Admin: Users & Services
 if is_admin:
-    if tab == "Users":
+    # --------------- Log Services (User)
+    if tab == "Log Services":
+        st.subheader("Log Completed Services")
+        # Fetch active users
+        all_users = sb.table("users").select("id, username").eq("is_active", True).order("username").execute().data
+        user_map = {u["username"]: u["id"] for u in all_users}
+        with st.form("log_service_form", clear_on_submit=True):
+            col1, col2 = st.columns(2)
+            with col1:
+                served_at = datetime.datetime.now(UTC_TZ)
+                qty = 1
+                amount_str = st.text_input("Service Amount")
+                tip_str = st.text_input("Tip")
+                payment_type = st.radio(
+                    "Payment Type",
+                    ["Credit", "Cash"],
+                    index=0,  # Default to "Credit"
+                    horizontal=True
+                )
+                selected_user = st.selectbox(
+                    "Select user",
+                    options=[u["username"] for u in all_users],
+                    index=[i for i,u in enumerate(all_users) if u["id"] == user["id"]][0]
+                )
+                served_date = st.date_input("Service Date (optional)", value=None)
+                served_time = st.time_input("Service Time (optional)", value=None)
+            submitted = st.form_submit_button("Save entry", type="primary")
+
+            if submitted:
+                # Determine served_at
+                if served_date and served_time:
+                    served_at = datetime.datetime.combine(served_date, served_time)
+                    served_at = served_at.replace(tzinfo=UTC_TZ)
+                else:
+                    served_at = datetime.datetime.now(UTC_TZ)
+                try:
+                    amount = float(amount_str) if amount_str.strip() else None
+                except Exception:
+                    st.error("Service Amount must be a number.")
+                    amount = None
+
+                try:
+                    tip = float(tip_str) if tip_str.strip() else 0.0
+                except Exception:
+                    st.error("Tip must be a number.")
+                    tip = 0.0
+
+                # Validation
+                if qty is None or qty <= 0:
+                    st.error("Quantity is required and must be greater than zero.")
+                elif amount is None or amount <= 0:
+                    st.error("Service Amount is required and must be greater than zero.")
+                elif tip is None or tip < 0:
+                    st.error("Tip cannot be negative.")
+                else:
+                    # Save entry
+                    sb.table("service_logs").insert({
+                        "user_id": user_map[selected_user],
+                        "served_at": served_at.isoformat(),
+                        "qty": int(qty),
+                        "amount_cents": amount,
+                        "tip_cents": tip,
+                        "payment_type": payment_type
+                    }).execute()
+                    st.success("Saved!")
+                    time.sleep(0.5)
+                    st.rerun()
+
+    if tab == "Users Management":
         st.markdown("### Users")
         with st.expander("Add user"):
             nuser = st.text_input("Username", key="nu")
@@ -319,7 +298,37 @@ if is_admin:
                     }).execute()
                     st.success("User created")
         ulist = sb.table("users").select("id, username, role, service_percentage, is_active, created_at").order("created_at", desc=True).execute().data
-        st.dataframe(pd.DataFrame(ulist)[["username","role","is_active","service_percentage", "created_at"]])
+        df = pd.DataFrame(ulist)[["username","role","is_active","service_percentage", "created_at"]]
+        df.index = df.index + 1
+        st.dataframe(df)
+
+        st.markdown("### Change user password")
+        all_users = sb.table("users").select("username, service_percentage").execute().data
+        target_user = st.selectbox("Pick user", [u["username"] for u in all_users])
+        current_percent = next(u["service_percentage"] for u in all_users if u["username"] == target_user)
+        new_pass = st.text_input("New password", type="password")
+        new_pin = st.text_input("New PIN", type="password", placeholder="Leave blank to keep current")
+        new_percent = st.number_input(
+            "Service %",
+            min_value=0,
+            max_value=100,
+            value=current_percent,  # pre-fill with current value
+            step=1
+        )
+        if st.button("Update user"):
+            update_values = {"service_percentage": new_percent}
+            if new_pass:
+                update_values["password_hash"] = bcrypt_hasher.hash(new_pass)
+            if new_pin:
+                update_values["pin"] = new_pin
+            sb.table("users").update(update_values).eq("username", target_user).execute()
+            st.success("User updated")
+        st.divider()
+        st.markdown("### Delete user")
+        del_user = st.selectbox("User to delete", [u["username"] for u in sb.table("users").select("username").order("username").execute().data], key="du")
+        if st.button("Delete user", type="secondary"):
+            sb.table("users").delete().eq("username", del_user).execute()
+            st.success("User deleted (and their logs if any)")
 
     # --------------- Admin: Reports
     if tab == "Reports":
@@ -392,7 +401,8 @@ if is_admin:
             if not rows:
                 st.info("No data for selection")
             else:
-                df = pd.DataFrame(rows)
+                df = pd.DataFrame(rows).sort_values("Date & Time", ascending=False)
+                df.index = df.index + 1
                 st.dataframe(df)
 
                 # Summary per user
@@ -432,43 +442,85 @@ if is_admin:
 
                 st.download_button("Download CSV", data=df.to_csv(index=False), file_name="report.csv", mime="text/csv")
 
-    # --------------- Admin: Data Admin
-    if tab == "Data Admin":
-        st.markdown("### Data Admin")
-        st.caption("Delete users, change passwords, and delete logs")
-        st.markdown("**Change user password**")
-        all_users = sb.table("users").select("username, service_percentage").execute().data
-        target_user = st.selectbox("Pick user", [u["username"] for u in all_users])
-        current_percent = next(u["service_percentage"] for u in all_users if u["username"] == target_user)
-        new_pass = st.text_input("New password", type="password")
-        new_percent = st.number_input(
-            "Service %",
-            min_value=0,
-            max_value=100,
-            value=current_percent,  # pre-fill with current value
-            step=1
-        )
-        if st.button("Update user"):
-            update_values = {"service_percentage": new_percent}
-            if new_pass:
-                update_values["password_hash"] = bcrypt_hasher.hash(new_pass)
-            sb.table("users").update(update_values).eq("username", target_user).execute()
-            st.success("User updated")
-        st.divider()
-        st.markdown("**Delete user**")
-        del_user = st.selectbox("User to delete", [u["username"] for u in sb.table("users").select("username").order("username").execute().data], key="du")
-        if st.button("Delete user", type="secondary"):
-            sb.table("users").delete().eq("username", del_user).execute()
-            st.success("User deleted (and their logs if any)")
-        st.divider()
-        st.markdown("**Delete a service log record**")
-        recent = sb.table("service_logs").select("id, served_at, users(username)").order("created_at", desc=True).limit(50).execute().data
-        if recent:
-            options = {f"{datetime.datetime.fromisoformat(r['served_at']).astimezone(central_tz).strftime('%Y-%m-%d %I:%M:%S %p')} — {r['users']['username']}": r["id"] for r in recent}
-            pick = st.selectbox("Pick a record", list(options.keys()))
-            if st.button("Delete record"):
-                sb.table("service_logs").delete().eq("id", options[pick]).execute()
-                st.success("Deleted record")
-                st.rerun()
+    if tab == "Edit Services":
+        st.markdown("### Edit Services")
+        st.caption("Filter, edit, or delete service logs")
+
+        # ----------------- Fetch users
+        all_users = sb.table("users").select("id, username").eq("is_active", True).order("username").execute().data
+        user_map = {u["username"]: u["id"] for u in all_users}
+        id_to_username = {u["id"]: u["username"] for u in all_users}
+
+        # ----------------- Filter by user & date
+        colf = st.columns(2)
+        with colf[0]:
+            selected_user = st.selectbox("Filter by user", ["All"] + [u["username"] for u in all_users], index=0)
+        with colf[1]:
+            start_date, end_date = return_start_and_end(key="edit_services")
+
+        # Convert to UTC for Supabase query
+        start_utc = start_date.astimezone(UTC_TZ)
+        end_utc = end_date.astimezone(UTC_TZ)
+
+        # ----------------- Fetch all services in one query
+        query = sb.table("service_logs").select(
+            "id, user_id, served_at, qty, amount_cents, tip_cents, payment_type"
+        ).gte("served_at", start_utc.isoformat()).lte("served_at", end_utc.isoformat())
+        if selected_user != "All":
+            query = query.eq("user_id", user_map[selected_user])
+        raw_services = query.order("served_at").execute().data
+
+        if not raw_services:
+            st.info("No service logs found for the selected filters.")
         else:
-            st.info("No recent logs")
+            # Build service picker options
+            options = {}
+            for svc in raw_services:
+                served_at_central = datetime.datetime.fromisoformat(svc["served_at"]).astimezone(central_tz)
+                served_at_str = served_at_central.strftime("%Y-%m-%d %I:%M %p")
+                username = id_to_username.get(svc["user_id"], "Unknown")
+                label = f"{served_at_str} — {username} — {svc['amount_cents']} — {svc['tip_cents']}"
+                options[label] = svc["id"]
+
+            st.markdown("#### Edit or Delete a Service")
+            selected_label = st.selectbox("Pick a service", list(options.keys()))
+            service_id = options[selected_label]
+
+            # Fetch selected service from already fetched list
+            svc = next(s for s in raw_services if s["id"] == service_id)
+            served_at_central = datetime.datetime.fromisoformat(svc["served_at"]).astimezone(central_tz)
+
+            # Editable fields
+            new_amount = st.number_input("Service Amount", min_value=0.0, value=svc["amount_cents"])
+            new_tip = st.number_input("Tip", min_value=0.0, value=svc["tip_cents"])
+            new_payment_type = st.radio(
+                "Payment Type",
+                ["Credit", "Cash"],
+                index=0 if svc["payment_type"] == "Credit" else 1,
+                horizontal=True
+            )
+
+            new_served_at_date = st.date_input("Service Date", value=served_at_central.date())
+            new_served_at_time = st.time_input("Service Time (AM/PM)", value=served_at_central.time())
+            st.caption(f"Current Time (AM/PM): {served_at_central.strftime('%I:%M:%S %p')}")
+
+            col_edit = st.columns(2)
+            with col_edit[0]:
+                if st.button("Update Service"):
+                    new_served_at = central_tz.localize(
+                        datetime.datetime.combine(new_served_at_date, new_served_at_time)
+                    ).astimezone(UTC_TZ)
+                    sb.table("service_logs").update({
+                        "amount_cents": new_amount,
+                        "tip_cents": new_tip,
+                        "payment_type": new_payment_type,
+                        "served_at": new_served_at.isoformat()
+                    }).eq("id", service_id).execute()
+                    st.success("Service updated!")
+                    st.rerun()
+
+            with col_edit[1]:
+                if st.button("Delete Service"):
+                    sb.table("service_logs").delete().eq("id", service_id).execute()
+                    st.success("Service deleted!")
+                    st.rerun()

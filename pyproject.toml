@@ -13,8 +13,6 @@ dependencies = [
     "streamlit>=1.49.1",
     "bcrypt>=4.3.0",
     "pillow>=11.3.0",
-    "streamlit-cookies-manager<=0.2.0",
-    "streamlit-javascript>=0.1.5",
     "pytz>=2025.2",
 ]
 

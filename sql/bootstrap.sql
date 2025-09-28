@@ -74,3 +74,6 @@ drop index if exists idx_service_logs_service;
 create index if not exists idx_service_logs_user_date on public.service_logs(user_id, served_at);
 
 alter table users add column pin varchar(10) null;
+
+ALTER TABLE users
+ADD CONSTRAINT unique_pin UNIQUE (pin);
